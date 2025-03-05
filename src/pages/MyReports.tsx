@@ -48,7 +48,7 @@ const MyReports = () => {
       case "active":
         return <Badge variant="destructive">Active</Badge>;
       case "investigating":
-        return <Badge variant="warning" className="bg-amber-500">Investigating</Badge>;
+        return <Badge variant="secondary" className="bg-amber-500 hover:bg-amber-600">Investigating</Badge>;
       case "resolved":
         return <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">Resolved</Badge>;
       default:
