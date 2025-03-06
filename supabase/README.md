@@ -35,3 +35,14 @@ The schema includes RLS policies to secure your data:
 - Profiles are publicly viewable but can only be updated by their owners
 - Hazard reports are publicly viewable but can only be created by authenticated users and updated by their creators
 - Votes and comments are publicly viewable but can only be created by authenticated users and deleted by their creators
+
+## Environment Variables
+
+Make sure to set the following environment variables in your project:
+
+```
+VITE_SUPABASE_URL=your_supabase_url
+VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
+```
+
+You can find these values in your Supabase dashboard under Project Settings > API.
