@@ -29,7 +29,11 @@ import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import MapComponent from "@/components/MapComponent";
 import { Card, CardContent } from "@/components/ui/card";
-import { HazardType } from "@/components/HazardCard";
+import { HazardType } from "@/types/supabase";
+import { useAuth } from "@/contexts/AuthContext";
+import { createHazardReport } from "@/services/hazardService";
+import { supabase } from "@/lib/supabase";
+import { v4 as uuidv4 } from "uuid";
 
 const formSchema = z.object({
   type: z.enum(["pothole", "waterlogging", "other"], {
@@ -49,6 +53,7 @@ const ReportPage = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [imagePreview, setImagePreview] = useState<string | null>(null);
   const navigate = useNavigate();
+  const { user } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -59,21 +64,74 @@ const ReportPage = () => {
     },
   });
 
+  useEffect(() => {
+    // Redirect to login if not authenticated
+    if (!user) {
+      toast.error("Please log in to report a hazard");
+      navigate("/login");
+    }
+  }, [user, navigate]);
+
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
+    if (!user) {
+      toast.error("You must be logged in to submit a report");
+      navigate("/login");
+      return;
+    }
+
     setIsSubmitting(true);
     
     try {
-      // This would be replaced with actual API call to submit the report
-      console.log("Report submitted:", values);
+      let imageUrl = null;
       
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 2000));
+      // Upload image if provided
+      if (values.image) {
+        const fileExt = values.image.name.split('.').pop();
+        const fileName = `${uuidv4()}.${fileExt}`;
+        const filePath = `hazard-images/${fileName}`;
+        
+        const { error: uploadError } = await supabase.storage
+          .from('hazard-images')
+          .upload(filePath, values.image);
+          
+        if (uploadError) {
+          throw uploadError;
+        }
+        
+        // Get public URL
+        const { data } = supabase.storage
+          .from('hazard-images')
+          .getPublicUrl(filePath);
+          
+        imageUrl = data.publicUrl;
+      }
+      
+      // Create hazard report
+      if (!values.latitude || !values.longitude) {
+        throw new Error("Location coordinates are required");
+      }
+      
+      const report = await createHazardReport(
+        values.type,
+        values.description,
+        {
+          lat: values.latitude,
+          lng: values.longitude,
+          address: values.address
+        },
+        user.id,
+        imageUrl || undefined
+      );
+      
+      if (!report) {
+        throw new Error("Failed to create report");
+      }
       
       toast.success("Hazard reported successfully!");
       navigate("/map");
-    } catch (error) {
+    } catch (error: any) {
       console.error("Report error:", error);
-      toast.error("There was an error submitting your report. Please try again.");
+      toast.error(error.message || "There was an error submitting your report. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -103,6 +161,10 @@ const ReportPage = () => {
     form.setValue("longitude", location.lng);
     form.setValue("address", location.address);
   };
+
+  if (!user) {
+    return null; // Will redirect in useEffect
+  }
 
   return (
     <div className="min-h-screen flex flex-col bg-background">

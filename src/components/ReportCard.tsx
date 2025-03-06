@@ -1,5 +1,6 @@
 
 import React from "react";
+import { useNavigate } from 'react-router-dom';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -14,11 +15,13 @@ export interface Report {
   category: string;
   date: string;
   upvotes: number;
+  isSelected?: boolean;
 }
 
 interface ReportCardProps {
   report: Report;
   onViewDetails?: (id: string) => void;
+  isSelected?: boolean;
 }
 
 const getStatusBadge = (status: string) => {
@@ -45,9 +48,19 @@ const getCategoryIcon = (category: string) => {
   }
 };
 
-const ReportCard: React.FC<ReportCardProps> = ({ report, onViewDetails }) => {
+const ReportCard: React.FC<ReportCardProps> = ({ report, onViewDetails, isSelected }) => {
+  const navigate = useNavigate();
+  
+  const handleViewDetails = () => {
+    if (onViewDetails) {
+      onViewDetails(report.id);
+    } else {
+      navigate(`/my-reports/${report.id}`);
+    }
+  };
+  
   return (
-    <Card key={report.id} className="overflow-hidden">
+    <Card key={report.id} className={`overflow-hidden transition-all ${isSelected ? 'ring-2 ring-primary scale-[1.02]' : ''}`}>
       <CardHeader className="flex flex-row items-start space-y-0 gap-4 pb-2">
         {getCategoryIcon(report.category)}
         <div className="flex-1">
@@ -79,7 +92,7 @@ const ReportCard: React.FC<ReportCardProps> = ({ report, onViewDetails }) => {
           size="sm" 
           variant="outline" 
           className="h-8" 
-          onClick={() => onViewDetails && onViewDetails(report.id)}
+          onClick={handleViewDetails}
         >
           View Details
         </Button>

@@ -1,6 +1,6 @@
 
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { z } from "zod";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -15,10 +15,10 @@ import {
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
 import { Checkbox } from "@/components/ui/checkbox";
-import { toast } from "sonner";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const formSchema = z.object({
   name: z.string().min(2, { message: "Name must be at least 2 characters" }),
@@ -34,8 +34,8 @@ const formSchema = z.object({
 });
 
 const Signup = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { signUp, isLoading: authLoading } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -49,22 +49,15 @@ const Signup = () => {
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    setIsLoading(true);
+    setIsSubmitting(true);
     
     try {
-      // This would be replaced with actual registration logic
-      console.log("Signup submitted:", values);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1500));
-      
-      toast.success("Account created successfully!");
-      navigate("/map");
+      await signUp(values.email, values.password, values.name);
     } catch (error) {
       console.error("Signup error:", error);
-      toast.error("There was an error creating your account. Please try again.");
+      // Error is handled in the AuthContext
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -176,8 +169,19 @@ const Signup = () => {
                   )}
                 />
                 
-                <Button type="submit" className="w-full h-12 mt-6" disabled={isLoading}>
-                  {isLoading ? "Creating account..." : "Create account"}
+                <Button 
+                  type="submit" 
+                  className="w-full h-12 mt-6" 
+                  disabled={isSubmitting || authLoading}
+                >
+                  {isSubmitting || authLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    "Create account"
+                  )}
                 </Button>
               </form>
             </Form>

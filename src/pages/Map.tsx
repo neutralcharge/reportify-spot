@@ -6,9 +6,7 @@ import {
   Filter, 
   Plus, 
   List, 
-  MapPin, 
   Grid,
-  SlidersHorizontal
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { 
@@ -17,9 +15,8 @@ import {
   DropdownMenuCheckboxItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import MapComponent from "@/components/MapComponent";
-import HazardCard, { Hazard, HazardType } from "@/components/HazardCard";
+import HazardCard, { Hazard } from "@/components/HazardCard";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
 import { Badge } from "@/components/ui/badge";
@@ -32,96 +29,32 @@ import {
 } from "@/components/ui/dialog";
 import { Card, CardContent } from "@/components/ui/card";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { useQuery } from "@tanstack/react-query";
+import { getHazardReports } from "@/services/hazardService";
+import { HazardReport, HazardStatus, HazardType } from "@/types/supabase";
+import { MapPin } from "lucide-react";
 
-// Mock data for hazards
-const mockHazards: Hazard[] = [
-  {
-    id: "1",
-    type: "pothole",
-    description: "Large pothole in the middle of the road",
-    location: {
-      address: "123 Main Street, Cityville",
-      lat: 40.7128,
-      lng: -74.006,
-    },
-    reportedBy: "John Doe",
-    reportedAt: "2023-09-15T10:30:00Z",
-    status: "active",
-    votes: 15,
-    comments: 5,
-    image: "https://images.unsplash.com/photo-1621951789295-9a8ad311cf1c?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80",
-  },
-  {
-    id: "2",
-    type: "waterlogging",
-    description: "Water accumulation after rain",
-    location: {
-      address: "456 Park Avenue, Cityville",
-      lat: 40.7135,
-      lng: -74.009,
-    },
-    reportedBy: "Jane Smith",
-    reportedAt: "2023-09-14T08:15:00Z",
-    status: "investigating",
-    votes: 8,
-    comments: 3,
-    image: "https://images.unsplash.com/photo-1578897366546-18d6bf0a2724?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80",
-  },
-  {
-    id: "3",
-    type: "other",
-    description: "Fallen tree blocking sidewalk",
-    location: {
-      address: "789 Broadway, Cityville",
-      lat: 40.7140,
-      lng: -74.003,
-    },
-    reportedBy: "Samuel Johnson",
-    reportedAt: "2023-09-13T15:45:00Z",
-    status: "resolved",
-    votes: 12,
-    comments: 7,
-    image: "https://images.unsplash.com/photo-1590691566921-aa78c29022a6?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80",
-  },
-  {
-    id: "4",
-    type: "pothole",
-    description: "Multiple potholes on road",
-    location: {
-      address: "101 Liberty Street, Cityville",
-      lat: 40.7120,
-      lng: -74.001,
-    },
-    reportedBy: "Emma Wilson",
-    reportedAt: "2023-09-12T09:20:00Z",
-    status: "active",
-    votes: 20,
-    comments: 12,
-  },
-  {
-    id: "5",
-    type: "waterlogging",
-    description: "Flooded underpass after heavy rain",
-    location: {
-      address: "202 Warren Street, Cityville",
-      lat: 40.7115,
-      lng: -74.008,
-    },
-    reportedBy: "Michael Brown",
-    reportedAt: "2023-09-11T14:10:00Z",
-    status: "investigating",
-    votes: 30,
-    comments: 15,
-    image: "https://images.unsplash.com/photo-1600451683128-846d1c9d735c?ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D&auto=format&fit=crop&w=500&q=80",
-  },
-];
+const transformToHazard = (report: HazardReport): Hazard => {
+  return {
+    id: report.id,
+    type: report.type,
+    description: report.description,
+    location: report.location,
+    reportedBy: report.reported_by,
+    reportedAt: report.reported_at,
+    status: report.status,
+    votes: report.votes,
+    comments: report.comments,
+    image: report.image_url,
+  };
+};
 
 const MapPage = () => {
-  const [filteredHazards, setFilteredHazards] = useState<Hazard[]>(mockHazards);
+  const [filteredHazards, setFilteredHazards] = useState<Hazard[]>([]);
   const [selectedHazard, setSelectedHazard] = useState<Hazard | null>(null);
   const [selectedFilters, setSelectedFilters] = useState<{
     types: HazardType[];
-    statuses: string[];
+    statuses: HazardStatus[];
   }>({
     types: ["pothole", "waterlogging", "other"],
     statuses: ["active", "investigating", "resolved"],
@@ -130,15 +63,27 @@ const MapPage = () => {
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const isMobile = useIsMobile();
 
+  // Fetch hazard reports from Supabase
+  const { data: hazardReports, isLoading, error } = useQuery({
+    queryKey: ['hazardReports'],
+    queryFn: getHazardReports,
+  });
+
   useEffect(() => {
-    // Filter hazards based on selected filters
-    const filtered = mockHazards.filter(
-      (hazard) =>
-        selectedFilters.types.includes(hazard.type) &&
-        selectedFilters.statuses.includes(hazard.status)
-    );
-    setFilteredHazards(filtered);
-  }, [selectedFilters]);
+    if (hazardReports) {
+      // Transform API data to UI components format
+      const hazards = hazardReports.map(transformToHazard);
+      
+      // Filter hazards based on selected filters
+      const filtered = hazards.filter(
+        (hazard) =>
+          selectedFilters.types.includes(hazard.type) &&
+          selectedFilters.statuses.includes(hazard.status)
+      );
+      
+      setFilteredHazards(filtered);
+    }
+  }, [hazardReports, selectedFilters]);
 
   const handleHazardSelect = (hazard: Hazard) => {
     setSelectedHazard(hazard);
@@ -154,7 +99,7 @@ const MapPage = () => {
     });
   };
 
-  const handleStatusFilterChange = (status: string) => {
+  const handleStatusFilterChange = (status: HazardStatus) => {
     setSelectedFilters((prev) => {
       const statuses = prev.statuses.includes(status)
         ? prev.statuses.filter((s) => s !== status)
@@ -176,10 +121,29 @@ const MapPage = () => {
 
         <div className="grid lg:grid-cols-5 gap-8">
           <div className="lg:col-span-3 h-[600px] rounded-xl overflow-hidden border border-border">
-            <MapComponent 
-              hazards={filteredHazards} 
-              onMarkerClick={handleHazardSelect}
-            />
+            {isLoading ? (
+              <div className="flex items-center justify-center h-full bg-muted">
+                <div className="flex flex-col items-center">
+                  <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-4"></div>
+                  <p>Loading map data...</p>
+                </div>
+              </div>
+            ) : error ? (
+              <div className="flex items-center justify-center h-full bg-muted/30">
+                <div className="text-center max-w-md p-6">
+                  <AlertCircle className="h-10 w-10 text-destructive mx-auto mb-4" />
+                  <h3 className="text-lg font-medium mb-2">Error loading map</h3>
+                  <p className="text-muted-foreground">
+                    There was a problem loading the map data. Please try again later.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <MapComponent 
+                hazards={filteredHazards} 
+                onMarkerClick={handleHazardSelect}
+              />
+            )}
           </div>
 
           <div className="lg:col-span-2 flex flex-col">
@@ -280,7 +244,12 @@ const MapPage = () => {
               }`}
               style={{ maxHeight: "600px" }}
             >
-              {filteredHazards.length > 0 ? (
+              {isLoading ? (
+                <div className="flex flex-col items-center justify-center p-8 text-center min-h-[200px]">
+                  <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mb-4"></div>
+                  <p>Loading hazard reports...</p>
+                </div>
+              ) : filteredHazards.length > 0 ? (
                 filteredHazards.map((hazard) => (
                   <HazardCard
                     key={hazard.id}

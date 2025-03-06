@@ -30,7 +30,7 @@ const ReportsList: React.FC<ReportsListProps> = ({
           filteredReports.map((report) => (
             <div 
               key={report.id} 
-              className={`transition-all duration-200 ${selectedReportId === report.id ? 'scale-[1.02] ring-2 ring-primary/50 rounded-lg' : ''}`}
+              className="transition-all duration-200"
             >
               <ReportCard 
                 report={report} 

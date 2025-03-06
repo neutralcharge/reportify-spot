@@ -14,10 +14,10 @@ import {
   FormMessage,
 } from "@/components/ui/form";
 import { Input } from "@/components/ui/input";
-import { toast } from "sonner";
 import Footer from "@/components/Footer";
 import Navbar from "@/components/Navbar";
-import { AlertCircle } from "lucide-react";
+import { AlertCircle, Loader2 } from "lucide-react";
+import { useAuth } from "@/contexts/AuthContext";
 
 const formSchema = z.object({
   email: z.string().email({ message: "Please enter a valid email address" }),
@@ -25,8 +25,8 @@ const formSchema = z.object({
 });
 
 const Login = () => {
-  const [isLoading, setIsLoading] = useState(false);
-  const navigate = useNavigate();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const { signIn, isLoading: authLoading } = useAuth();
 
   const form = useForm<z.infer<typeof formSchema>>({
     resolver: zodResolver(formSchema),
@@ -37,22 +37,15 @@ const Login = () => {
   });
 
   const onSubmit = async (values: z.infer<typeof formSchema>) => {
-    setIsLoading(true);
+    setIsSubmitting(true);
     
     try {
-      // This would be replaced with actual authentication logic
-      console.log("Login submitted:", values);
-      
-      // Simulate API call
-      await new Promise(resolve => setTimeout(resolve, 1000));
-      
-      toast.success("Welcome back!");
-      navigate("/map");
+      await signIn(values.email, values.password);
     } catch (error) {
       console.error("Login error:", error);
-      toast.error("Invalid email or password. Please try again.");
+      // Error is handled in the AuthContext
     } finally {
-      setIsLoading(false);
+      setIsSubmitting(false);
     }
   };
 
@@ -116,8 +109,19 @@ const Login = () => {
                   </Link>
                 </div>
                 
-                <Button type="submit" className="w-full h-12" disabled={isLoading}>
-                  {isLoading ? "Signing in..." : "Sign in"}
+                <Button 
+                  type="submit" 
+                  className="w-full h-12" 
+                  disabled={isSubmitting || authLoading}
+                >
+                  {isSubmitting || authLoading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    "Sign in"
+                  )}
                 </Button>
               </form>
             </Form>

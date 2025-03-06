@@ -10,19 +10,17 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { useAuth } from "@/contexts/AuthContext";
 
 const Navbar = () => {
   const [isOpen, setIsOpen] = useState(false);
   const location = useLocation();
+  const { user, signOut } = useAuth();
   
-  // Mock authentication state - will be replaced with actual auth
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
-
   const toggleMenu = () => setIsOpen(!isOpen);
   
-  const handleLogout = () => {
-    // This will be replaced with actual logout logic
-    setIsLoggedIn(false);
+  const handleLogout = async () => {
+    await signOut();
   };
 
   const links = [
@@ -63,7 +61,7 @@ const Navbar = () => {
           </div>
           
           <div className="flex items-center space-x-4">
-            {isLoggedIn ? (
+            {user ? (
               <DropdownMenu>
                 <DropdownMenuTrigger asChild>
                   <Button variant="ghost" size="icon" className="rounded-full">
@@ -126,7 +124,7 @@ const Navbar = () => {
               </Link>
             ))}
             <div className="pt-2 border-t border-border">
-              {isLoggedIn ? (
+              {user ? (
                 <>
                   <Link
                     to="/profile"
