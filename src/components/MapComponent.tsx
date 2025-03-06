@@ -33,7 +33,8 @@ const MapComponent: React.FC<MapComponentProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [map, setMap] = useState<google.maps.Map | null>(null);
   const markersRef = useRef<google.maps.Marker[]>([]);
-  const googleMapsApiKey = "AIzaSyDMpLxw7TOSNhuMglbZGS0pN4_jJX2w58o";
+  const googleMapsApiKey = import.meta.env.VITE_MAP_API_KEY;
+
 
   // Load Google Maps API
   useEffect(() => {
@@ -42,23 +43,30 @@ const MapComponent: React.FC<MapComponentProps> = ({
         initializeMap();
         return;
       }
-
-      const script = document.createElement("script");
-      script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`;
-      script.async = true;
-      script.defer = true;
-      script.onload = initializeMap;
-      document.head.appendChild(script);
+  
+      const existingScript = document.getElementById("google-maps");
+      if (!existingScript) {
+        const script = document.createElement("script");
+        script.id = "google-maps";
+        script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`;
+        script.async = true;
+        script.defer = true;
+        script.onload = initializeMap;
+        script.onerror = () => console.error("Failed to load Google Maps API");
+        document.head.appendChild(script);
+      } else {
+        existingScript.onload = initializeMap;
+      }
     };
-
+  
     loadGoogleMapsAPI();
-
+  
     return () => {
       // Clean up markers when component unmounts
       markersRef.current.forEach(marker => marker.setMap(null));
     };
   }, []);
-
+  
   // Initialize map
   const initializeMap = () => {
     if (!mapContainerRef.current || !window.google) return;
@@ -250,7 +258,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
       marker.addListener("click", () => {
         // Close all open info windows
         markersRef.current.forEach((m) => {
-          // @ts-ignore: infoWindow property is dynamically added
           if (m.infoWindow) m.infoWindow.close();
         });
         
@@ -258,7 +265,6 @@ const MapComponent: React.FC<MapComponentProps> = ({
         infoWindow.open(mapInstance, marker);
         
         // Save reference to open info window
-        // @ts-ignore: Adding custom property to marker
         marker.infoWindow = infoWindow;
         
         // Call the onMarkerClick callback if provided
