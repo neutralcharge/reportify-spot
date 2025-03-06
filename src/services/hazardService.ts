@@ -1,226 +1,169 @@
+/**
+ * Service for detecting hazard types from images
+ */
 
-import { supabase } from '@/lib/supabase';
-import { HazardReport, HazardStatus, HazardType, Location } from '@/types/supabase';
-import { toast } from 'sonner';
+// API endpoint for hazard detection
+const HAZARD_DETECTION_API = 'https://detect.roboflow.com/infer/workflows/urbanfix/custom-workflow';
+const API_KEY = 'j3C8g5q9c8vXk1FyhV1s';
 
-// Transform database row to HazardReport
-const transformHazardRow = (row: any): HazardReport => {
-  return {
-    id: row.id,
-    type: row.type,
-    description: row.description,
-    location: {
-      lat: row.lat,
-      lng: row.lng,
-      address: row.address,
-    },
-    reported_by: row.reported_by,
-    reported_at: row.created_at,
-    status: row.status,
-    votes: row.votes,
-    comments: row.comments,
-    image_url: row.image_url,
-  };
-};
+// Types for responses
+export interface HazardDetectionResult {
+  type: string;
+  confidence: number;
+  detectedObjects?: Array<{
+    class: string;
+    confidence: number;
+  }>;
+}
 
-// Get all hazard reports
-export const getHazardReports = async (): Promise<HazardReport[]> => {
+/**
+ * Detects hazard type from an image URL
+ */
+export async function detectHazardFromUrl(imageUrl: string): Promise<HazardDetectionResult> {
   try {
-    const { data, error } = await supabase
-      .from('hazard_reports')
-      .select('*');
-
-    if (error) {
-      throw error;
-    }
-
-    return data.map(transformHazardRow);
-  } catch (error: any) {
-    console.error('Error fetching hazard reports:', error);
-    toast.error('Failed to load hazard reports');
-    return [];
-  }
-};
-
-// Get hazard reports by user ID
-export const getUserHazardReports = async (userId: string): Promise<HazardReport[]> => {
-  try {
-    const { data, error } = await supabase
-      .from('hazard_reports')
-      .select('*')
-      .eq('reported_by', userId);
-
-    if (error) {
-      throw error;
-    }
-
-    return data.map(transformHazardRow);
-  } catch (error: any) {
-    console.error('Error fetching user hazard reports:', error);
-    toast.error('Failed to load your reports');
-    return [];
-  }
-};
-
-// Get a single hazard report by ID
-export const getHazardReportById = async (id: string): Promise<HazardReport | null> => {
-  try {
-    const { data, error } = await supabase
-      .from('hazard_reports')
-      .select('*')
-      .eq('id', id)
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    return transformHazardRow(data);
-  } catch (error: any) {
-    console.error(`Error fetching hazard report with id ${id}:`, error);
-    toast.error('Failed to load hazard details');
-    return null;
-  }
-};
-
-// Create a new hazard report
-export const createHazardReport = async (
-  type: HazardType,
-  description: string,
-  location: Location,
-  reportedBy: string,
-  imageUrl?: string
-): Promise<HazardReport | null> => {
-  try {
-    const { data, error } = await supabase
-      .from('hazard_reports')
-      .insert({
-        type,
-        description,
-        lat: location.lat,
-        lng: location.lng,
-        address: location.address,
-        reported_by: reportedBy,
-        status: 'active' as HazardStatus,
-        votes: 0,
-        comments: 0,
-        image_url: imageUrl || null,
+    const response = await fetch(HAZARD_DETECTION_API, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        api_key: API_KEY,
+        inputs: {
+          "image": { "type": "url", "value": imageUrl }
+        }
       })
-      .select()
-      .single();
+    });
 
-    if (error) {
-      throw error;
+    if (!response.ok) {
+      throw new Error(`API request failed with status ${response.status}`);
     }
 
-    return transformHazardRow(data);
-  } catch (error: any) {
-    console.error('Error creating hazard report:', error);
-    toast.error('Failed to create hazard report');
-    return null;
-  }
-};
-
-// Update a hazard report
-export const updateHazardReport = async (
-  id: string,
-  updates: Partial<HazardReport>
-): Promise<HazardReport | null> => {
-  try {
-    const updateData: any = {};
+    const result = await response.json();
     
-    if (updates.type) updateData.type = updates.type;
-    if (updates.description) updateData.description = updates.description;
-    if (updates.status) updateData.status = updates.status;
-    if (updates.location) {
-      updateData.lat = updates.location.lat;
-      updateData.lng = updates.location.lng;
-      updateData.address = updates.location.address;
-    }
-    if (updates.image_url !== undefined) updateData.image_url = updates.image_url;
-
-    const { data, error } = await supabase
-      .from('hazard_reports')
-      .update(updateData)
-      .eq('id', id)
-      .select()
-      .single();
-
-    if (error) {
-      throw error;
-    }
-
-    return transformHazardRow(data);
-  } catch (error: any) {
-    console.error(`Error updating hazard report with id ${id}:`, error);
-    toast.error('Failed to update hazard report');
-    return null;
+    // Process the API response to determine hazard type
+    return processDetectionResult(result);
+  } catch (error) {
+    console.error("Error detecting hazard:", error);
+    return { 
+      type: "unknown", 
+      confidence: 0,
+      detectedObjects: []
+    };
   }
-};
+}
 
-// Vote for a hazard report
-export const voteHazardReport = async (hazardId: string, userId: string): Promise<boolean> => {
+/**
+ * Detects hazard type from a file object
+ */
+export async function detectHazardFromFile(file: File): Promise<HazardDetectionResult> {
   try {
-    // Check if the user has already voted
-    const { data: existingVote, error: checkError } = await supabase
-      .from('hazard_votes')
-      .select('*')
-      .eq('hazard_id', hazardId)
-      .eq('user_id', userId)
-      .single();
-
-    if (checkError && checkError.code !== 'PGRST116') {
-      throw checkError;
-    }
-
-    if (existingVote) {
-      // Remove vote
-      const { error: deleteError } = await supabase
-        .from('hazard_votes')
-        .delete()
-        .eq('id', existingVote.id);
-
-      if (deleteError) {
-        throw deleteError;
-      }
-
-      // Decrement vote count
-      const { error: updateError } = await supabase.rpc('decrement_hazard_votes', {
-        hazard_id: hazardId
-      });
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      return false;
-    } else {
-      // Add vote
-      const { error: insertError } = await supabase
-        .from('hazard_votes')
-        .insert({
-          hazard_id: hazardId,
-          user_id: userId,
-        });
-
-      if (insertError) {
-        throw insertError;
-      }
-
-      // Increment vote count
-      const { error: updateError } = await supabase.rpc('increment_hazard_votes', {
-        hazard_id: hazardId
-      });
-
-      if (updateError) {
-        throw updateError;
-      }
-
-      return true;
-    }
-  } catch (error: any) {
-    console.error(`Error voting for hazard report with id ${hazardId}:`, error);
-    toast.error('Failed to register vote');
-    return false;
+    // Convert the file to a data URL
+    const imageDataUrl = await fileToDataUrl(file);
+    
+    // For the API, we need a publicly accessible URL
+    // In a real app, you'd upload to a temporary storage and get a URL
+    // For demo purposes, we'll simulate with a random detection result
+    
+    // Simulate API detection with random results
+    return simulateDetection();
+  } catch (error) {
+    console.error("Error detecting hazard from file:", error);
+    return { 
+      type: "unknown", 
+      confidence: 0 
+    };
   }
-};
+}
+
+/**
+ * Converts a File object to a data URL
+ */
+function fileToDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+/**
+ * Processes the detection API result
+ */
+function processDetectionResult(apiResult: any): HazardDetectionResult {
+  // Implement proper parsing based on the actual API response structure
+  // This is a placeholder implementation
+  
+  try {
+    // Check if the API returned any hazard classifications
+    if (apiResult?.predictions?.object_detection?.predictions) {
+      const detections = apiResult.predictions.object_detection.predictions;
+      
+      // Find the prediction with highest confidence
+      const highestConfidencePrediction = detections.reduce(
+        (highest: any, current: any) => 
+          (current.confidence > highest.confidence) ? current : highest, 
+        { confidence: 0 }
+      );
+      
+      if (highestConfidencePrediction) {
+        return {
+          type: mapClassToHazardType(highestConfidencePrediction.class),
+          confidence: highestConfidencePrediction.confidence,
+          detectedObjects: detections.map((det: any) => ({
+            class: det.class,
+            confidence: det.confidence
+          }))
+        };
+      }
+    }
+    
+    // Fallback result if no clear prediction
+    return { 
+      type: "other", 
+      confidence: 0.5,
+      detectedObjects: []
+    };
+  } catch (error) {
+    console.error("Error processing detection result:", error);
+    return { 
+      type: "unknown", 
+      confidence: 0,
+      detectedObjects: [] 
+    };
+  }
+}
+
+/**
+ * Maps detection class to hazard type
+ */
+function mapClassToHazardType(className: string): string {
+  const classMap: Record<string, string> = {
+    'pothole': 'pothole',
+    'water_logging': 'waterlogging',
+    'waterlogging': 'waterlogging',
+    'garbage': 'other',
+    'damaged_road': 'other',
+    'blocked_drain': 'other'
+    // Add more mappings as needed
+  };
+  
+  return classMap[className.toLowerCase()] || 'other';
+}
+
+/**
+ * Simulates a detection result (for demo purposes)
+ */
+function simulateDetection(): HazardDetectionResult {
+  const hazardTypes = ['pothole', 'waterlogging', 'other'];
+  const randomIndex = Math.floor(Math.random() * hazardTypes.length);
+  const confidence = 0.6 + (Math.random() * 0.4); // Random confidence between 0.6 and 1.0
+  
+  return {
+    type: hazardTypes[randomIndex],
+    confidence: confidence,
+    detectedObjects: [
+      { class: hazardTypes[randomIndex], confidence: confidence }
+    ]
+  };
+}
