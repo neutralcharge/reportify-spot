@@ -1,277 +1,244 @@
 
-import { useEffect, useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { getHazardReportById, updateHazardReport } from "@/services/hazardService";
-import { HazardReport, HazardStatus } from "@/types/supabase";
 import { useAuth } from "@/contexts/AuthContext";
+import { getHazardReportById, voteHazardReport } from "@/services/hazardService";
+import { HazardReport, HazardStatus } from "@/types/supabase";
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
-import { 
-  AlertCircle, 
-  MapPin, 
-  Clock, 
-  User, 
-  ThumbsUp, 
-  MessageSquare,
-  ArrowLeft,
-  Loader2
-} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardFooter } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
+import { Separator } from "@/components/ui/separator";
+import { AlertCircle, ArrowLeft, ThumbsUp, MapPin, Calendar, User, AlertTriangle } from "lucide-react";
 import { toast } from "sonner";
-import { Link } from "react-router-dom";
-import MapComponent from "@/components/MapComponent";
+
+const getStatusBadge = (status: HazardStatus) => {
+  switch (status) {
+    case "active":
+      return <Badge variant="outline" className="bg-yellow-100 text-yellow-800 border-yellow-200">Active</Badge>;
+    case "investigating":
+      return <Badge variant="outline" className="bg-blue-100 text-blue-800 border-blue-200">Investigating</Badge>;
+    case "resolved":
+      return <Badge variant="outline" className="bg-green-100 text-green-800 border-green-200">Resolved</Badge>;
+    default:
+      return <Badge variant="outline">Unknown</Badge>;
+  }
+};
+
+const getTypeIcon = (type: string) => {
+  switch (type) {
+    case "pothole":
+      return <div className="h-10 w-10 rounded-full bg-hazard-pothole/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-hazard-pothole" /></div>;
+    case "waterlogging":
+      return <div className="h-10 w-10 rounded-full bg-hazard-waterlogging/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-hazard-waterlogging" /></div>;
+    default:
+      return <div className="h-10 w-10 rounded-full bg-hazard-other/10 flex items-center justify-center"><AlertTriangle className="h-5 w-5 text-hazard-other" /></div>;
+  }
+};
 
 const ReportDetails = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
   const { user } = useAuth();
+  const navigate = useNavigate();
+  const [hasVoted, setHasVoted] = useState(false);
   
-  // Fetch report details
+  // Fetch hazard report details
   const { data: report, isLoading, error, refetch } = useQuery({
-    queryKey: ['reportDetails', id],
+    queryKey: ['hazardReport', id],
     queryFn: () => getHazardReportById(id || ''),
     enabled: !!id,
   });
-
-  // Redirect if not logged in
+  
+  // Check if user is authenticated
   useEffect(() => {
     if (!user) {
       navigate("/login");
     }
   }, [user, navigate]);
-
+  
+  // Handle upvote action
+  const handleUpvote = async () => {
+    if (!user || !report) return;
+    
+    try {
+      const voted = await voteHazardReport(report.id, user.id);
+      setHasVoted(voted);
+      
+      if (voted) {
+        toast.success("Upvoted successfully!");
+      } else {
+        toast.info("Upvote removed");
+      }
+      
+      // Refresh report data
+      refetch();
+    } catch (error) {
+      console.error("Error upvoting report:", error);
+      toast.error("Failed to process upvote");
+    }
+  };
+  
+  // Handle back button
+  const handleBack = () => {
+    navigate(-1);
+  };
+  
   if (isLoading) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
         <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center justify-center text-center p-8">
-            <Loader2 className="h-10 w-10 animate-spin mb-4 text-primary" />
-            <h2 className="text-2xl font-bold mb-2">Loading Report Details</h2>
-            <p className="text-muted-foreground">Please wait while we fetch the report information...</p>
-          </div>
+          <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full"></div>
+          <span className="ml-3">Loading report details...</span>
         </main>
         <Footer />
       </div>
     );
   }
-
+  
   if (error || !report) {
     return (
       <div className="min-h-screen flex flex-col">
         <Navbar />
-        <main className="flex-1 flex items-center justify-center">
-          <div className="flex flex-col items-center justify-center text-center p-8 max-w-md">
-            <AlertCircle className="h-12 w-12 text-destructive mb-4" />
-            <h2 className="text-2xl font-bold mb-2">Report Not Found</h2>
-            <p className="text-muted-foreground mb-6">
-              The report you're looking for doesn't exist or you don't have permission to view it.
-            </p>
-            <Button asChild>
-              <Link to="/my-reports">
-                <ArrowLeft size={16} className="mr-2" />
-                Back to My Reports
-              </Link>
-            </Button>
-          </div>
+        <main className="flex-1 flex flex-col items-center justify-center p-6">
+          <AlertCircle className="h-12 w-12 text-destructive mb-4" />
+          <h2 className="text-2xl font-bold mb-2">Report Not Found</h2>
+          <p className="text-muted-foreground mb-6">The report you're looking for doesn't exist or you don't have permission to view it.</p>
+          <Button onClick={handleBack}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Go Back
+          </Button>
         </main>
         <Footer />
       </div>
     );
   }
-
-  // Handle status change
-  const handleStatusChange = async (newStatus: HazardStatus) => {
-    try {
-      await updateHazardReport(report.id, { status: newStatus });
-      refetch();
-      toast.success(`Status updated to ${newStatus}`);
-    } catch (error) {
-      toast.error('Failed to update status');
-    }
-  };
-
-  // Format date
-  const formatDate = (dateString: string) => {
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-  };
-
-  // Determine if user is the owner of this report
-  const isOwner = user && user.id === report.reported_by;
-
+  
   return (
     <div className="min-h-screen flex flex-col">
       <Navbar />
-      <main className="flex-1 py-12 bg-gray-50">
-        <div className="container px-4 sm:px-6">
-          <div className="max-w-5xl mx-auto">
-            {/* Back button */}
-            <div className="mb-6">
-              <Button variant="ghost" asChild>
-                <Link to="/my-reports">
-                  <ArrowLeft size={16} className="mr-2" />
-                  Back to My Reports
-                </Link>
-              </Button>
-            </div>
-            
-            {/* Report header */}
-            <div className="mb-8">
-              <div className="flex flex-wrap items-center gap-2 mb-3">
-                <Badge className={`
-                  ${report.type === "pothole" 
-                    ? "bg-red-500" 
-                    : report.type === "waterlogging" 
-                      ? "bg-blue-500" 
-                      : "bg-orange-500"} 
-                  text-white hover:opacity-80`
-                }>
-                  {report.type.charAt(0).toUpperCase() + report.type.slice(1)}
-                </Badge>
-                <Badge className={`
-                  ${report.status === "active" 
-                    ? "bg-yellow-100 text-yellow-800 border-yellow-200" 
-                    : report.status === "resolved" 
-                      ? "bg-green-100 text-green-800 border-green-200" 
-                      : "bg-blue-100 text-blue-800 border-blue-200"
-                  } hover:bg-opacity-80`
-                }>
-                  {report.status.charAt(0).toUpperCase() + report.status.slice(1)}
-                </Badge>
-              </div>
-              
-              <h1 className="text-3xl font-bold mb-2">Hazard Report</h1>
-              <p className="text-muted-foreground">
-                View detailed information about this hazard report
-              </p>
-            </div>
-            
-            {/* Report content */}
-            <div className="grid md:grid-cols-5 gap-8">
-              {/* Map */}
-              <div className="md:col-span-3">
-                <Card className="overflow-hidden">
-                  <div className="h-[300px]">
-                    <MapComponent 
-                      initialLocation={{
-                        lat: report.location.lat,
-                        lng: report.location.lng
-                      }}
-                      readOnly={true}
-                      showControls={false}
-                    />
+      <main className="flex-1 py-12 px-4 sm:px-6 lg:px-8 bg-gray-50">
+        <div className="max-w-3xl mx-auto">
+          <Button 
+            variant="ghost" 
+            size="sm" 
+            className="mb-6" 
+            onClick={handleBack}
+          >
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Back to Reports
+          </Button>
+          
+          <div className="bg-white shadow-sm rounded-lg overflow-hidden">
+            {/* Header */}
+            <div className="px-6 py-5 border-b">
+              <div className="flex items-center gap-4">
+                {getTypeIcon(report.type)}
+                <div>
+                  <div className="flex items-center space-x-2 mb-1">
+                    <Badge className={`${
+                      report.type === "pothole" 
+                        ? "bg-hazard-pothole text-white" 
+                        : report.type === "waterlogging" 
+                          ? "bg-hazard-waterlogging text-white" 
+                          : "bg-hazard-other text-white"
+                    }`}>
+                      {report.type.charAt(0).toUpperCase() + report.type.slice(1)}
+                    </Badge>
+                    {getStatusBadge(report.status)}
                   </div>
-                </Card>
+                  <h1 className="text-2xl font-bold">{report.description}</h1>
+                </div>
               </div>
-              
-              {/* Details */}
-              <div className="md:col-span-2 space-y-6">
-                <Card>
-                  <CardContent className="pt-6">
-                    <div className="space-y-4">
+            </div>
+            
+            {/* Image (if available) */}
+            {report.image_url && (
+              <div className="border-b">
+                <img 
+                  src={report.image_url} 
+                  alt={report.description}
+                  className="w-full h-auto max-h-96 object-cover"
+                />
+              </div>
+            )}
+            
+            {/* Details */}
+            <div className="p-6">
+              <Card>
+                <CardContent className="p-6 space-y-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex items-start">
+                      <MapPin className="h-5 w-5 text-primary mr-2 mt-0.5" />
                       <div>
-                        <h3 className="text-lg font-medium mb-2">Description</h3>
-                        <p>{report.description}</p>
-                      </div>
-                      
-                      <div className="flex items-start space-x-2">
-                        <MapPin size={18} className="text-primary mt-0.5" />
-                        <div>
-                          <div className="font-medium">Location</div>
-                          <div className="text-sm text-muted-foreground">
-                            {report.location.address}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start space-x-2">
-                        <Clock size={18} className="text-primary mt-0.5" />
-                        <div>
-                          <div className="font-medium">Reported On</div>
-                          <div className="text-sm text-muted-foreground">
-                            {formatDate(report.reported_at)}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-start space-x-2">
-                        <User size={18} className="text-primary mt-0.5" />
-                        <div>
-                          <div className="font-medium">Reported By</div>
-                          <div className="text-sm text-muted-foreground">
-                            {report.reported_by === user?.id ? 'You' : report.reported_by}
-                          </div>
-                        </div>
-                      </div>
-                      
-                      <div className="flex items-center space-x-4 mt-2">
-                        <div className="flex items-center space-x-1">
-                          <ThumbsUp size={16} className="text-primary" />
-                          <span>{report.votes}</span>
-                        </div>
-                        <div className="flex items-center space-x-1">
-                          <MessageSquare size={16} className="text-primary" />
-                          <span>{report.comments}</span>
-                        </div>
+                        <h3 className="font-medium">Location</h3>
+                        <p className="text-muted-foreground">{report.location.address}</p>
                       </div>
                     </div>
-                  </CardContent>
-                  {isOwner && (
-                    <CardFooter className="flex-col space-y-2 pt-4">
-                      <div className="text-sm font-medium">Update Status:</div>
-                      <div className="flex flex-wrap gap-2">
-                        <Button 
-                          variant={report.status === "active" ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handleStatusChange("active")}
-                          disabled={report.status === "active"}
-                        >
-                          Active
-                        </Button>
-                        <Button 
-                          variant={report.status === "investigating" ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handleStatusChange("investigating")}
-                          disabled={report.status === "investigating"}
-                        >
-                          Investigating
-                        </Button>
-                        <Button 
-                          variant={report.status === "resolved" ? "default" : "outline"}
-                          size="sm"
-                          onClick={() => handleStatusChange("resolved")}
-                          disabled={report.status === "resolved"}
-                        >
-                          Resolved
-                        </Button>
+                    
+                    <div className="flex items-start">
+                      <Calendar className="h-5 w-5 text-primary mr-2 mt-0.5" />
+                      <div>
+                        <h3 className="font-medium">Reported On</h3>
+                        <p className="text-muted-foreground">
+                          {new Date(report.reported_at).toLocaleDateString('en-US', {
+                            day: 'numeric',
+                            month: 'long', 
+                            year: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                          })}
+                        </p>
                       </div>
-                    </CardFooter>
-                  )}
-                </Card>
-                
-                {report.image_url && (
-                  <Card>
-                    <CardContent className="p-0">
-                      <div className="aspect-video w-full overflow-hidden">
-                        <img 
-                          src={report.image_url} 
-                          alt="Hazard" 
-                          className="w-full h-full object-cover"
-                        />
+                    </div>
+                    
+                    <div className="flex items-start">
+                      <User className="h-5 w-5 text-primary mr-2 mt-0.5" />
+                      <div>
+                        <h3 className="font-medium">Reported By</h3>
+                        <p className="text-muted-foreground">
+                          {report.reported_by === user?.id ? "You" : "Another User"}
+                        </p>
                       </div>
-                    </CardContent>
-                  </Card>
-                )}
+                    </div>
+                    
+                    <div className="flex items-start">
+                      <ThumbsUp className="h-5 w-5 text-primary mr-2 mt-0.5" />
+                      <div>
+                        <h3 className="font-medium">Upvotes</h3>
+                        <p className="text-muted-foreground">{report.votes} upvotes</p>
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+              
+              <Separator className="my-6" />
+              
+              <div className="flex flex-col space-y-4">
+                <h3 className="text-lg font-medium">Description</h3>
+                <p>{report.description}</p>
               </div>
+            </div>
+            
+            {/* Actions */}
+            <div className="px-6 py-4 bg-gray-50 border-t flex justify-between items-center">
+              <Button 
+                variant="outline"
+                onClick={handleUpvote}
+                className={hasVoted ? "bg-primary/10" : ""}
+              >
+                <ThumbsUp className={`mr-2 h-4 w-4 ${hasVoted ? "fill-primary" : ""}`} />
+                {hasVoted ? "Upvoted" : "Upvote"}
+              </Button>
+              
+              {report.reported_by === user?.id && (
+                <Button variant="default">
+                  Contact Authority
+                </Button>
+              )}
             </div>
           </div>
         </div>
