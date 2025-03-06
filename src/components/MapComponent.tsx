@@ -1,369 +1,306 @@
+import { useState, useEffect, useRef } from 'react';
+import { Button } from '@/components/ui/button';
+import { Loader2, MapPin, Locate } from 'lucide-react';
+import { toast } from 'sonner';
+import { cn } from '@/lib/utils';
 
-import { useEffect, useRef, useState } from "react";
-import { Button } from "@/components/ui/button";
-import { MapPin, Locate, AlertCircle } from "lucide-react";
-import { toast } from "sonner";
-import { Hazard, HazardType } from "./HazardCard";
-
-interface Location {
+export interface Location {
   lat: number;
   lng: number;
   address: string;
 }
 
 interface MapComponentProps {
-  hazards?: Hazard[];
+  initialLocation?: Location;
   onSelectLocation?: (location: Location) => void;
-  onMarkerClick?: (hazard: Hazard) => void;
   showControls?: boolean;
   readOnly?: boolean;
-  initialLocation?: { lat: number; lng: number };
+  className?: string;
 }
 
-const MapComponent: React.FC<MapComponentProps> = ({
-  hazards = [],
+const MapComponent = ({
+  initialLocation,
   onSelectLocation,
-  onMarkerClick,
   showControls = true,
   readOnly = false,
-  initialLocation,
-}) => {
-  const mapContainerRef = useRef<HTMLDivElement>(null);
-  const [currentLocation, setCurrentLocation] = useState<Location | null>(null);
+  className
+}: MapComponentProps) => {
+  const [currentLocation, setCurrentLocation] = useState<Location | null>(initialLocation || null);
   const [isLoading, setIsLoading] = useState(false);
-  const [map, setMap] = useState<google.maps.Map | null>(null);
-  const markersRef = useRef<google.maps.Marker[]>([]);
-  const googleMapsApiKey = import.meta.env.VITE_MAP_API_KEY;
+  const [isLocating, setIsLocating] = useState(false);
+  const mapContainerRef = useRef<HTMLDivElement>(null);
+  const mapRef = useRef<google.maps.Map | null>(null);
+  const markerRef = useRef<google.maps.Marker | null>(null);
 
-
-  // Load Google Maps API
+  // Initialize the map when the component mounts
   useEffect(() => {
-    const loadGoogleMapsAPI = () => {
-      if (window.google && window.google.maps) {
-        initializeMap();
+    const initMap = async () => {
+      setIsLoading(true);
+      
+      // Check if Google Maps API is loaded
+      if (!window.google?.maps) {
+        console.error('Google Maps API not loaded');
+        toast.error('Unable to load map. Please try again later.');
+        setIsLoading(false);
         return;
       }
-  
-      const existingScript = document.getElementById("google-maps");
-      if (!existingScript) {
-        const script = document.createElement("script");
-        script.id = "google-maps";
-        script.src = `https://maps.googleapis.com/maps/api/js?key=${googleMapsApiKey}&libraries=places`;
-        script.async = true;
-        script.defer = true;
-        script.onload = initializeMap;
-        script.onerror = () => console.error("Failed to load Google Maps API");
-        document.head.appendChild(script);
-      } else {
-        existingScript.onload = initializeMap;
+
+      try {
+        // Default center (can be a central location in your target area)
+        const defaultCenter = { lat: 28.6139, lng: 77.2090 }; // New Delhi
+        
+        // Create the map
+        const mapOptions: google.maps.MapOptions = {
+          center: initialLocation ? 
+            { lat: initialLocation.lat, lng: initialLocation.lng } : 
+            defaultCenter,
+          zoom: 15,
+          mapTypeControl: false,
+          fullscreenControl: false,
+          streetViewControl: false,
+          zoomControl: true,
+          styles: [
+            {
+              featureType: 'all',
+              elementType: 'geometry',
+              stylers: [{ saturation: -80 }]
+            },
+            {
+              featureType: 'road',
+              elementType: 'geometry',
+              stylers: [{ lightness: 20 }]
+            }
+          ]
+        };
+        
+        if (mapContainerRef.current) {
+          mapRef.current = new window.google.maps.Map(
+            mapContainerRef.current,
+            mapOptions
+          );
+          
+          // Create marker if initial location exists
+          if (initialLocation) {
+            createMarker(initialLocation);
+          }
+          
+          // Add click event listener if not read-only
+          if (!readOnly) {
+            mapRef.current.addListener('click', handleMapClick);
+          }
+        }
+      } catch (error) {
+        console.error('Error initializing map:', error);
+        toast.error('Unable to initialize map. Please try again later.');
+      } finally {
+        setIsLoading(false);
       }
     };
-  
-    loadGoogleMapsAPI();
-  
+
+    initMap();
+
+    // Cleanup function
     return () => {
-      // Clean up markers when component unmounts
-      markersRef.current.forEach(marker => marker.setMap(null));
-    };
-  }, []);
-  
-  // Initialize map
-  const initializeMap = () => {
-    if (!mapContainerRef.current || !window.google) return;
-
-    const defaultLocation = { lat: 40.7128, lng: -74.006 }; // New York by default
-    const mapOptions: google.maps.MapOptions = {
-      center: initialLocation || defaultLocation,
-      zoom: 14,
-      mapTypeControl: true,
-      fullscreenControl: true,
-      streetViewControl: true,
-      zoomControl: true,
-      styles: [
-        {
-          featureType: "poi",
-          elementType: "labels",
-          stylers: [{ visibility: "on" }],
-        },
-      ],
-    };
-
-    const newMap = new google.maps.Map(mapContainerRef.current, mapOptions);
-    setMap(newMap);
-
-    if (initialLocation) {
-      setCurrentLocation({
-        ...initialLocation,
-        address: "Loading address...",
-      });
-      
-      // Reverse geocode the initial location
-      const geocoder = new google.maps.Geocoder();
-      geocoder.geocode(
-        { location: initialLocation },
-        (results, status) => {
-          if (status === "OK" && results && results[0]) {
-            setCurrentLocation({
-              ...initialLocation,
-              address: results[0].formatted_address,
-            });
-          }
-        }
-      );
-      
-      // Add marker for initial location
-      new google.maps.Marker({
-        position: initialLocation,
-        map: newMap,
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 8,
-          fillColor: "hsl(var(--primary))",
-          fillOpacity: 1,
-          strokeColor: "white",
-          strokeWeight: 2,
-        },
-      });
-    }
-
-    // Add click listener for selecting location
-    if (!readOnly) {
-      newMap.addListener("click", (e: google.maps.MapMouseEvent) => {
-        if (!e.latLng) return;
-        
-        const latLng = e.latLng.toJSON();
-        handleMapClick(latLng);
-      });
-    }
-
-    // Add hazard markers
-    addHazardMarkers(newMap);
-  };
-
-  // Handle map clicks and reverse geocode to get address
-  const handleMapClick = (latLng: google.maps.LatLngLiteral) => {
-    if (readOnly || !map) return;
-
-    // Clear existing user marker
-    markersRef.current
-      .filter(marker => marker.getTitle() === "Your selected location")
-      .forEach(marker => marker.setMap(null));
-
-    // Add marker at clicked location
-    const marker = new google.maps.Marker({
-      position: latLng,
-      map: map,
-      animation: google.maps.Animation.DROP,
-      title: "Your selected location",
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 8,
-        fillColor: "hsl(var(--primary))",
-        fillOpacity: 1,
-        strokeColor: "white",
-        strokeWeight: 2,
-      },
-    });
-    
-    markersRef.current.push(marker);
-
-    // Get address using reverse geocoding
-    const geocoder = new google.maps.Geocoder();
-    geocoder.geocode(
-      { location: latLng },
-      (results, status) => {
-        if (status === "OK" && results && results[0]) {
-          const location = {
-            lat: latLng.lat,
-            lng: latLng.lng,
-            address: results[0].formatted_address,
-          };
-          
-          setCurrentLocation(location);
-          
-          if (onSelectLocation) {
-            onSelectLocation(location);
-          }
-          
-          toast.success("Location selected successfully");
-        } else {
-          const location = {
-            lat: latLng.lat,
-            lng: latLng.lng,
-            address: `${latLng.lat.toFixed(6)}, ${latLng.lng.toFixed(6)}`,
-          };
-          
-          setCurrentLocation(location);
-          
-          if (onSelectLocation) {
-            onSelectLocation(location);
-          }
-          
-          toast.info("Coordinates selected (address not found)");
-        }
+      if (mapRef.current && !readOnly) {
+        // @ts-ignore
+        window.google?.maps?.event.clearListeners(mapRef.current, 'click');
       }
-    );
-  };
+      markerRef.current = null;
+    };
+  }, [initialLocation, readOnly]);
 
-  // Add markers for hazards
-  const addHazardMarkers = (mapInstance: google.maps.Map) => {
-    // Clean existing markers first
-    markersRef.current.forEach(marker => marker.setMap(null));
-    markersRef.current = [];
-
-    hazards.forEach((hazard) => {
-      if (!hazard.location?.lat || !hazard.location?.lng) return;
+  // Handle map click to place a marker
+  const handleMapClick = async (e: google.maps.MapMouseEvent) => {
+    if (readOnly || !mapRef.current || !e.latLng) return;
+    
+    const lat = e.latLng.lat();
+    const lng = e.latLng.lng();
+    
+    try {
+      setIsLoading(true);
+      // Reverse geocode the clicked location
+      const address = await reverseGeocode(lat, lng);
       
-      // Define marker color based on hazard type
-      const getMarkerColor = (type: HazardType) => {
-        switch (type) {
-          case "pothole": return "#ef4444"; // red
-          case "waterlogging": return "#3b82f6"; // blue
-          case "other": return "#f97316"; // orange
-          default: return "#6b7280"; // gray
-        }
-      };
-
-      const marker = new google.maps.Marker({
-        position: { lat: hazard.location.lat, lng: hazard.location.lng },
-        map: mapInstance,
-        title: hazard.description,
-        animation: google.maps.Animation.DROP,
-        icon: {
-          path: google.maps.SymbolPath.BACKWARD_CLOSED_ARROW,
-          scale: 6,
-          fillColor: getMarkerColor(hazard.type),
-          fillOpacity: 0.9,
-          strokeColor: "white",
-          strokeWeight: 2,
-        },
-      });
-
-      // Create an info window
-      const infoWindow = new google.maps.InfoWindow({
-        content: `
-          <div style="max-width: 200px; padding: 5px;">
-            <div style="font-weight: bold; margin-bottom: 5px;">${hazard.description}</div>
-            <div style="font-size: 0.875rem; color: #4b5563;">
-              Reported by: ${hazard.reportedBy}
-            </div>
-            <div style="font-size: 0.875rem; color: #4b5563;">
-              Status: ${hazard.status.charAt(0).toUpperCase() + hazard.status.slice(1)}
-            </div>
-          </div>
-        `,
-      });
-
-      // Add click listener for marker
-      marker.addListener("click", () => {
-        // Close all open info windows
-        markersRef.current.forEach((m) => {
-          if (m.infoWindow) m.infoWindow.close();
-        });
-        
-        // Open this info window
-        infoWindow.open(mapInstance, marker);
-        
-        // Save reference to open info window
-        marker.infoWindow = infoWindow;
-        
-        // Call the onMarkerClick callback if provided
-        if (onMarkerClick) {
-          onMarkerClick(hazard);
-        }
-      });
-
-      markersRef.current.push(marker);
-    });
+      const location = { lat, lng, address };
+      setCurrentLocation(location);
+      createMarker(location);
+      
+      // Notify parent component
+      if (onSelectLocation) {
+        onSelectLocation(location);
+      }
+    } catch (error) {
+      console.error('Error handling map click:', error);
+      toast.error('Unable to get address for this location');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  // Get user's current location
-  const getUserLocation = () => {
-    setIsLoading(true);
+  // Get current device location
+  const getCurrentLocation = () => {
+    if (readOnly) return;
+    
+    setIsLocating(true);
     
     if (!navigator.geolocation) {
-      toast.error("Geolocation is not supported by your browser");
-      setIsLoading(false);
+      toast.error('Geolocation is not supported by your browser');
+      setIsLocating(false);
       return;
     }
     
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        const { latitude, longitude } = position.coords;
-        const latLng = { lat: latitude, lng: longitude };
-        
-        // Center map on user location
-        if (map) {
-          map.setCenter(latLng);
-          map.setZoom(16);
+      async (position) => {
+        try {
+          const lat = position.coords.latitude;
+          const lng = position.coords.longitude;
+          
+          // Center the map on current location
+          if (mapRef.current) {
+            mapRef.current.setCenter({ lat, lng });
+            mapRef.current.setZoom(17); // Zoom in closer
+          }
+          
+          // Reverse geocode to get address
+          const address = await reverseGeocode(lat, lng);
+          
+          const location = { lat, lng, address };
+          setCurrentLocation(location);
+          createMarker(location);
+          
+          // Notify parent component
+          if (onSelectLocation) {
+            onSelectLocation(location);
+          }
+          
+          toast.success('Located your current position');
+        } catch (error) {
+          console.error('Error getting current location:', error);
+          toast.error('Unable to get your current location address');
+        } finally {
+          setIsLocating(false);
         }
-        
-        // Set marker and get address
-        handleMapClick(latLng);
-        setIsLoading(false);
       },
       (error) => {
-        console.error("Error getting location:", error);
-        toast.error("Unable to retrieve your location. Please check your location permissions.");
-        setIsLoading(false);
+        console.error('Geolocation error:', error);
+        let errorMessage = 'Unable to get your location';
+        
+        switch (error.code) {
+          case error.PERMISSION_DENIED:
+            errorMessage = 'Location permission denied. Please enable location services.';
+            break;
+          case error.POSITION_UNAVAILABLE:
+            errorMessage = 'Location information is unavailable.';
+            break;
+          case error.TIMEOUT:
+            errorMessage = 'Location request timed out.';
+            break;
+        }
+        
+        toast.error(errorMessage);
+        setIsLocating(false);
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }
+      {
+        enableHighAccuracy: true,
+        timeout: 10000,
+        maximumAge: 0
+      }
     );
   };
 
-  // Update markers when hazards change or map is initialized
-  useEffect(() => {
-    if (map) {
-      addHazardMarkers(map);
+  // Reverse geocode coordinates to address
+  const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      if (!window.google?.maps) {
+        reject('Google Maps API not loaded');
+        return;
+      }
+      
+      const geocoder = new window.google.maps.Geocoder();
+      geocoder.geocode(
+        { location: { lat, lng } },
+        (results, status) => {
+          if (status === 'OK' && results && results[0]) {
+            resolve(results[0].formatted_address);
+          } else {
+            reject(`Geocoder failed: ${status}`);
+          }
+        }
+      );
+    });
+  };
+
+  // Create or update marker
+  const createMarker = (location: Location) => {
+    if (!mapRef.current) return;
+    
+    // Remove existing marker
+    if (markerRef.current) {
+      markerRef.current.setMap(null);
     }
-  }, [hazards, map]);
+    
+    // Create new marker
+    markerRef.current = new window.google.maps.Marker({
+      position: { lat: location.lat, lng: location.lng },
+      map: mapRef.current,
+      animation: window.google.maps.Animation.DROP,
+      title: 'Selected Location'
+    });
+    
+    // Optionally add an info window
+    const infoWindow = new window.google.maps.InfoWindow({
+      content: `<div class="p-2"><strong>Location</strong><br>${location.address}</div>`
+    });
+    
+    markerRef.current.addListener('click', () => {
+      infoWindow.open(mapRef.current, markerRef.current);
+    });
+  };
 
   return (
-    <div className="relative w-full h-full min-h-[400px] rounded-lg overflow-hidden border border-border">
-      {/* Map container */}
+    <div className={cn("relative w-full h-full", className)}>
       <div 
-        ref={mapContainerRef}
-        className="absolute inset-0 bg-blue-50"
+        ref={mapContainerRef} 
+        className="map-container"
+        style={{ height: '100%', minHeight: '300px' }}
       />
       
-      {/* Loading overlay */}
-      {!map && (
-        <div className="absolute inset-0 flex items-center justify-center bg-blue-50/50">
-          <div className="glass-panel p-4 rounded-lg max-w-md text-center">
-            <div className="animate-spin h-8 w-8 border-4 border-primary border-t-transparent rounded-full mx-auto mb-4"></div>
-            <h3 className="text-lg font-medium mb-2">Loading Map</h3>
-            <p className="text-sm text-muted-foreground">
-              Please wait while we load the interactive map...
-            </p>
+      {isLoading && (
+        <div className="absolute inset-0 flex items-center justify-center bg-white/50 backdrop-blur-sm">
+          <div className="flex flex-col items-center gap-2">
+            <Loader2 className="h-8 w-8 animate-spin text-primary" />
+            <p className="text-sm font-medium">Loading map...</p>
           </div>
         </div>
       )}
       
-      {/* Controls */}
-      {showControls && (
-        <div className="absolute top-4 right-4 flex flex-col space-y-2">
-          <Button 
-            variant="secondary" 
-            size="icon" 
-            onClick={getUserLocation}
-            disabled={isLoading}
+      {showControls && !readOnly && (
+        <div className="absolute bottom-4 right-4 flex flex-col gap-2">
+          <Button
+            size="sm"
+            variant="secondary"
             className="shadow-md"
+            onClick={getCurrentLocation}
+            disabled={isLocating}
           >
-            {isLoading ? (
-              <span className="animate-spin">
-                <Locate size={18} />
-              </span>
+            {isLocating ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
             ) : (
-              <Locate size={18} />
+              <Locate className="h-4 w-4 mr-2" />
             )}
+            {isLocating ? 'Locating...' : 'My Location'}
           </Button>
         </div>
       )}
       
-      {/* Map attribution */}
-      <div className="absolute bottom-1 right-1 bg-white/80 px-2 py-1 rounded text-xs text-muted-foreground">
-        Map data © Google Maps
-      </div>
+      {currentLocation && (
+        <div className="absolute top-4 left-4 max-w-xs">
+          <div className="glass-card p-2 text-xs rounded-md">
+            <div className="font-medium mb-1">Selected Location</div>
+            <div className="text-muted-foreground line-clamp-2">{currentLocation.address}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
