@@ -12,13 +12,12 @@ The application uses the following tables:
 3. **hazard_votes** - User votes on hazards
 4. **hazard_comments** - User comments on hazards
 
-## Setup Instructions
+## Setup Information
 
-1. Go to your Supabase dashboard: [https://app.supabase.com/](https://app.supabase.com/)
-2. Select your project
-3. Navigate to the SQL Editor
-4. Copy the contents of `schema.sql` in this folder
-5. Run the SQL query to create all the necessary tables, functions, triggers and RLS policies
+The application is connected to the following Supabase instance:
+
+- **URL**: https://rfgtryzdddjglrpzlxql.supabase.co
+- **API Key**: An anonymous key has been configured in the application
 
 ## Storage Setup
 
@@ -36,13 +35,6 @@ The schema includes RLS policies to secure your data:
 - Hazard reports are publicly viewable but can only be created by authenticated users and updated by their creators
 - Votes and comments are publicly viewable but can only be created by authenticated users and deleted by their creators
 
-## Environment Variables
+## Important Notes
 
-Make sure to set the following environment variables in your project:
-
-```
-VITE_SUPABASE_URL=your_supabase_url
-VITE_SUPABASE_ANON_KEY=your_supabase_anon_key
-```
-
-You can find these values in your Supabase dashboard under Project Settings > API.
+All the tables, triggers, functions, and RLS policies have been created according to the schema defined in `schema.sql`. The application is now ready to use with your Supabase instance.
